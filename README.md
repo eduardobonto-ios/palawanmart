@@ -34,4 +34,7 @@ View your app in AI Studio: https://ai.studio/apps/8d6fcaf7-4776-4327-8ec3-442fa
    `npm run dev`
 
 > If you still see `auth/unauthorized-domain`, the current host is not yet authorized for your Firebase project.
-> If Supabase data is missing locally, make sure `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are configured in `.env.local`.
+> If seller listings, cart, or checkout don't work, check:
+>   1. `VITE_SUPABASE_URL` and `VITE_SUPABASE_ANON_KEY` are set in `.env.local` (local) or Vercel Environment Variables (Vercel production)
+>   2. Check browser console (F12 → Console tab) for Supabase initialization errors
+>   3. Verify your Supabase project has these tables with proper RLS policies: `products`, `categories`, `orders`, `order_items`, `profiles`, `messages`

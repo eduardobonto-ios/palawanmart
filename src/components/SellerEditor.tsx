@@ -119,7 +119,37 @@ export default function SellerEditor({ onBack }: { onBack: () => void }) {
     }
 
     if (!supabase) {
-      setErrorMsg('Database connection not available.');
+      setErrorMsg('Database connection not available. Check your Supabase configuration in environment variables.');
+      console.error('[SellerEditor] Supabase client is null. Check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.');
+      return;
+    }
+
+    // Ensure seller profile exists before inserting product to satisfy foreign key constraints
+    try {
+      // Use upsert to avoid duplicate email constraint violations
+      const { error: profileError } = await supabase
+        .from('profiles')
+        .upsert({
+          id: currentUser.id,
+          display_name: currentUser.name,
+          display_name2: currentUser.name,
+          email: currentUser.email || '',
+          photo_url: currentUser.photoURL || null,
+          role: currentUser.role || 'vendor',
+          updated_at: new Date().toISOString()
+        }, {
+          onConflict: 'id' // Conflict on id column
+        });
+
+      if (profileError) {
+        console.error('[SellerEditor] Failed to upsert seller profile:', profileError);
+        setErrorMsg('Unable to sync seller profile before publishing the product.');
+        return;
+      }
+      console.info('[SellerEditor] Seller profile verified/created:', currentUser.id);
+    } catch (profileCheckError) {
+      console.error('[SellerEditor] Profile sync failed:', profileCheckError);
+      setErrorMsg('Unable to verify seller identity before publishing the product.');
       return;
     }
 

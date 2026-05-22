@@ -116,21 +116,43 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
         // Merge with mock products if none in DB, or just use DB
         if (mappedProducts.length === 0) {
-           setProducts(mockProducts);
+          // No products in DB - set empty so UI can render empty state
+          setProducts([]);
         } else {
-           setProducts(mappedProducts);
+          setProducts(mappedProducts);
+        }
+
+        // Diagnostic: log how many products belong to current user (helps debug missing seller inventory)
+        try {
+          const currentUid = currentUser?.id || auth.currentUser?.uid;
+          if (currentUid) {
+            const myCount = mappedProducts.filter(mp => mp.vendorId === currentUid).length;
+            console.info('[refreshProducts] total=', mappedProducts.length, 'myProducts=', myCount, 'user=', currentUid);
+          } else {
+            console.info('[refreshProducts] total=', mappedProducts.length);
+          }
+        } catch (diagErr) {
+          console.warn('[refreshProducts] diagnostics failed', diagErr);
         }
       }
     } catch (err) {
       console.error('Error fetching products:', err);
-      // Fallback to mock data if error
-      setProducts(mockProducts);
+      // If Supabase is present but fetch failed, set empty products to avoid UI hang
+      if (supabase) {
+        setProducts([]);
+      } else {
+        // If Supabase not configured, fallback to bundled mock data
+        setProducts(mockProducts);
+      }
     }
   };
 
   const refreshOrders = async (userId?: string) => {
     const idToUse = userId || currentUser?.id || auth.currentUser?.uid;
-    if (!supabase || !idToUse) return;
+    if (!supabase || !idToUse) {
+      console.warn('[refreshOrders] Cannot refresh orders: supabase=', !!supabase, 'userId=', idToUse);
+      return;
+    }
     try {
       // Check user role from profiles if not available in state
       let userRole = currentUser?.role;
@@ -154,9 +176,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
 
       const { data, error } = await query;
       
-      if (error) throw error;
+      if (error) {
+        console.error('[refreshOrders] Query error:', error);
+        throw error;
+      }
       
       if (data) {
+        console.info('[refreshOrders] Fetched', data.length, 'orders for user', idToUse);
         setOrders(data.map(o => ({
           id: o.id,
           buyerId: o.buyer_id,
@@ -182,11 +208,17 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     } catch (err) {
       console.error('Error fetching orders:', err);
+      // ensure UI doesn't hang: if query fails, clear orders to show empty state
+      setOrders([]);
     }
   };
 
   const createOrder = async (sellerId: string, items: { productId: string, quantity: number }[], deliveryAddress: string) => {
-    if (!supabase || !currentUser) return;
+    if (!supabase) {
+      console.error('[createOrder] Supabase not initialized. Check environment variables.');
+      throw new Error('Supabase not configured. Check your Supabase environment variables.');
+    }
+    if (!currentUser) return;
     
     let totalAmount = 0;
     const orderItemsPayload = [];
@@ -259,6 +291,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!currentUser || cart.length === 0) return;
     
     try {
+      if (!supabase) {
+        throw new Error('Supabase not initialized. Check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY environment variables.');
+      }
+
       // Group cart items by vendorId
       const itemsBySeller: { [key: string]: CartItem[] } = {};
       for (const item of cart) {
@@ -281,7 +317,8 @@ export function AppProvider({ children }: { children: ReactNode }) {
       alert('Order placed successfully! The sellers have been notified.');
     } catch (err) {
       console.error('Checkout failed:', err);
-      alert('Failed to place order. Please try again.');
+      const errorMsg = err instanceof Error ? err.message : 'Failed to place order';
+      alert(errorMsg);
     }
   };
 
@@ -399,7 +436,11 @@ export function AppProvider({ children }: { children: ReactNode }) {
     if (!supabase) return;
     const { data, error } = await supabase.from('profiles').select('*');
     if (data) setProfiles(data);
-    if (error) console.error('Error fetching profiles:', error);
+    if (error) {
+      console.error('Error fetching profiles:', error);
+      // clear profiles on error to avoid stale state
+      setProfiles([]);
+    }
   };
 
   const refreshRatings = async () => {
@@ -602,46 +643,25 @@ export function AppProvider({ children }: { children: ReactNode }) {
     const syncProfileToSupabase = async (firebaseUser: any, currentRole?: string) => {
       if (!supabase) return;
       try {
-        // First check if profile exists to avoid overwriting display_name, display_name2, delivery_address or other fields
-        const { data: existingProfile } = await supabase
+        // Upsert profile to avoid duplicate email constraint violations
+        const { error: upsertError } = await supabase
           .from('profiles')
-          .select('id, display_name, display_name2')
-          .eq('id', firebaseUser.uid)
-          .single();
-
-        if (!existingProfile) {
-          await supabase
-            .from('profiles')
-            .insert({
-              id: firebaseUser.uid,
-              display_name: firebaseUser.displayName || 'User',
-              display_name2: firebaseUser.displayName || 'User',
-              email: firebaseUser.email || '',
-              photo_url: firebaseUser.photoURL || null,
-              role: currentRole || 'customer',
-              updated_at: new Date().toISOString()
-            });
-        } else {
-          // Update basic info except display names which might be custom
-          const updateData: any = {
+          .upsert({
+            id: firebaseUser.uid,
+            display_name: firebaseUser.displayName || 'User',
+            display_name2: firebaseUser.displayName || 'User',
+            email: firebaseUser.email || '',
             photo_url: firebaseUser.photoURL || null,
+            role: currentRole || 'customer',
             updated_at: new Date().toISOString()
-          };
-          
-          // Only update display_name if it was never set
-          if (!existingProfile.display_name) {
-            updateData.display_name = firebaseUser.displayName || 'User';
-          }
-          
-          // Only update display_name2 if it was never set
-          if (!existingProfile.display_name2) {
-            updateData.display_name2 = firebaseUser.displayName || 'User';
-          }
+          }, { 
+            onConflict: 'id' // Conflict on id column, not email
+          });
 
-          await supabase
-            .from('profiles')
-            .update(updateData)
-            .eq('id', firebaseUser.uid);
+        if (upsertError) {
+          console.error('[syncProfileToSupabase] Upsert error:', upsertError);
+        } else {
+          console.info('[syncProfileToSupabase] Profile synced for', firebaseUser.uid);
         }
       } catch (err) {
         console.error('Unexpected error during profile sync:', err);
@@ -669,7 +689,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
             contact_number
           };
           setCurrentUser(userData);
-          syncProfileToSupabase(firebaseUser, role);
+          await syncProfileToSupabase(firebaseUser, role);
           // Pass the ID directly to avoid stale state issues on login
           refreshOrders(firebaseUser.uid);
         };
@@ -744,6 +764,13 @@ export function AppProvider({ children }: { children: ReactNode }) {
       }
     };
   }, []);
+
+  // Refresh orders whenever currentUser changes
+  useEffect(() => {
+    if (currentUser?.id) {
+      refreshOrders(currentUser.id);
+    }
+  }, [currentUser?.id]);
 
   const login = async () => {
     if (isLoggingIn) return;

@@ -12,6 +12,7 @@ export const categories: Category[] = [
   { id: '3', name: 'Packaged Food', icon: 'Package' },
   { id: '4', name: 'Souvenirs', icon: 'Gift' },
   { id: '5', name: 'Wellness', icon: 'Sparkles' },
+  { id: '7', name: 'Car & Car Parts', icon: 'Car' }
 ];
 
 export const vendors: Vendor[] = [

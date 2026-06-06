@@ -5,14 +5,14 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { 
-  Star, 
-  ShoppingCart, 
-  ArrowLeft, 
-  ChevronLeft, 
-  ChevronRight, 
-  ShieldCheck, 
-  Truck, 
+import {
+  Star,
+  ShoppingCart,
+  ArrowLeft,
+  ChevronLeft,
+  ChevronRight,
+  ShieldCheck,
+  Truck,
   RotateCcw,
   Store,
   MessageCircle,
@@ -23,10 +23,12 @@ import {
   Trash2,
   Save,
   CheckCircle,
-  AlertCircle
+  AlertCircle,
+  Loader2
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { supabase } from '../lib/supabase';
+import { uploadImageToSupabase } from '../lib/uploadImage';
 
 interface Category {
   id: string;
@@ -56,6 +58,7 @@ export default function SellerEditor({ onBack }: { onBack: () => void }) {
 
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isSaving, setIsSaving] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [showSuccess, setShowSuccess] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -71,19 +74,23 @@ export default function SellerEditor({ onBack }: { onBack: () => void }) {
     fetchCategories();
   }, []);
 
-  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
-    if (files) {
-      Array.from(files).forEach((file: File) => {
-        const reader = new FileReader();
-        reader.onloadend = () => {
-          setProduct(prev => ({
-            ...prev,
-            images: [...prev.images, reader.result as string]
-          }));
-        };
-        reader.readAsDataURL(file);
-      });
+    if (!files || files.length === 0) return;
+
+    setIsUploading(true);
+    setErrorMsg(null);
+    try {
+      const uploadPromises = Array.from(files).map(file =>
+        uploadImageToSupabase(file, 'order-items')
+      );
+      const urls = await Promise.all(uploadPromises);
+      setProduct(prev => ({ ...prev, images: [...prev.images, ...urls] }));
+    } catch (err: any) {
+      setErrorMsg(err.message || 'Failed to upload image. Please try again.');
+    } finally {
+      setIsUploading(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
@@ -238,7 +245,7 @@ export default function SellerEditor({ onBack }: { onBack: () => void }) {
           <h2 className="text-2xl font-black text-emerald-900">Seller Studio</h2>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 flex-wrap">
           <div className="flex bg-emerald-50 p-1 rounded-xl mr-4">
             <button 
               onClick={() => setActiveTab('inventory')}
@@ -271,22 +278,17 @@ export default function SellerEditor({ onBack }: { onBack: () => void }) {
             </button>
           </div>
           {activeTab === 'editor' && (
-            <button 
+            <button
               onClick={handleSave}
-              disabled={isSaving}
-              className={`flex items-center gap-2 px-8 py-3 rounded-2xl font-black transition-all active:scale-95 shadow-lg ${
-                isSaving ? 'bg-emerald-100 text-emerald-400' : 'bg-primary text-white shadow-primary/20 hover:shadow-xl'
+              disabled={isSaving || isUploading}
+              className={`flex items-center justify-center gap-2 px-6 py-3 rounded-2xl font-black transition-all active:scale-95 shadow-lg w-full sm:w-auto ${
+                (isSaving || isUploading) ? 'bg-emerald-100 text-emerald-400' : 'bg-primary text-white shadow-primary/20 hover:shadow-xl'
               }`}
             >
               {isSaving ? (
-                <motion.div
-                  animate={{ rotate: 360 }}
-                  transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
-                >
-                  <Plus size={20} />
-                </motion.div>
+                <Loader2 size={20} className="animate-spin" />
               ) : <Save size={20} />}
-              {isSaving ? 'Saving...' : (editingProductId ? 'Update Listing' : 'Publish Product')}
+              {isUploading ? 'Uploading Image...' : isSaving ? 'Saving...' : (editingProductId ? 'Update Listing' : 'Publish Product')}
             </button>
           )}
           {editingProductId && activeTab === 'editor' && (
@@ -421,6 +423,12 @@ export default function SellerEditor({ onBack }: { onBack: () => void }) {
         {/* Left: Image Carousel / Upload */}
         <div className="space-y-6">
           <div className="relative aspect-square rounded-[2.5rem] overflow-hidden bg-emerald-50 group flex items-center justify-center">
+            {isUploading && (
+              <div className="absolute inset-0 bg-white/80 flex flex-col items-center justify-center z-10">
+                <Loader2 size={40} className="text-primary animate-spin mb-3" />
+                <p className="font-black text-emerald-900 text-sm">Uploading...</p>
+              </div>
+            )}
             {product.images.length > 0 ? (
               <>
                 <AnimatePresence mode="wait">
@@ -434,7 +442,7 @@ export default function SellerEditor({ onBack }: { onBack: () => void }) {
                     className="w-full h-full object-cover"
                   />
                 </AnimatePresence>
-                <button 
+                <button
                   onClick={() => removeImage(currentImageIndex)}
                   className="absolute top-4 right-4 p-3 bg-red-500 text-white rounded-full shadow-lg opacity-0 group-hover:opacity-100 transition-opacity hover:bg-red-600 active:scale-90"
                 >
@@ -448,9 +456,10 @@ export default function SellerEditor({ onBack }: { onBack: () => void }) {
                 </div>
                 <p className="font-black text-emerald-900 mb-1">Add Product Photos</p>
                 <p className="text-sm text-emerald-900/40 font-medium">Clear photos attract more buyers</p>
-                <button 
+                <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="mt-6 px-6 py-3 bg-white text-emerald-900 rounded-xl font-bold shadow-sm border border-emerald-100 hover:border-primary transition-all"
+                  disabled={isUploading}
+                  className="mt-6 px-6 py-3 bg-white text-emerald-900 rounded-xl font-bold shadow-sm border border-emerald-100 hover:border-primary transition-all disabled:opacity-50"
                 >
                   Choose Images
                 </button>
@@ -487,10 +496,11 @@ export default function SellerEditor({ onBack }: { onBack: () => void }) {
           <div className="flex gap-4 overflow-x-auto no-scrollbar pb-2">
             <button
               onClick={() => fileInputRef.current?.click()}
-              className="w-20 h-20 rounded-2xl border-2 border-dashed border-emerald-200 flex flex-col items-center justify-center text-emerald-300 hover:text-primary hover:border-primary transition-all shrink-0 bg-emerald-50/20"
+              disabled={isUploading}
+              className="w-20 h-20 rounded-2xl border-2 border-dashed border-emerald-200 flex flex-col items-center justify-center text-emerald-300 hover:text-primary hover:border-primary transition-all shrink-0 bg-emerald-50/20 disabled:opacity-50"
             >
-              <Plus size={24} />
-              <span className="text-[10px] font-bold">Add</span>
+              {isUploading ? <Loader2 size={20} className="animate-spin" /> : <Plus size={24} />}
+              <span className="text-[10px] font-bold">{isUploading ? '...' : 'Add'}</span>
             </button>
             {product.images.map((img, idx) => (
               <button

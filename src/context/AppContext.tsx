@@ -5,7 +5,6 @@
 
 import React, { createContext, useContext, useState, ReactNode, useEffect } from 'react';
 import { User, CartItem, Product, Message, Order, OrderStatus, Rating } from '../types';
-import { products as mockProducts } from '../mockData';
 import { auth, googleProvider } from '../lib/firebase';
 import { onAuthStateChanged, signInWithPopup, signOut } from 'firebase/auth';
 import { supabase } from '../lib/supabase';
@@ -18,6 +17,7 @@ interface AppContextType {
   loginError: string | null;
   setLoginError: (error: string | null) => void;
   products: Product[];
+  isLoadingProducts: boolean;
   profiles: any[];
   refreshProducts: () => Promise<void>;
   refreshProfiles: () => Promise<void>;
@@ -65,6 +65,7 @@ const AppContext = createContext<AppContextType | undefined>(undefined);
 export function AppProvider({ children }: { children: ReactNode }) {
   const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [products, setProducts] = useState<Product[]>([]);
+  const [isLoadingProducts, setIsLoadingProducts] = useState(true);
   const [profiles, setProfiles] = useState<any[]>([]);
   const [messages, setMessages] = useState<Message[]>([]);
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -83,67 +84,42 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [ratings, setRatings] = useState<Rating[]>([]);
 
   const refreshProducts = async () => {
+    setIsLoadingProducts(true);
     if (!supabase) {
-      console.warn('[Supabase] Skipping product refresh because Supabase client is not configured. Using mock data instead.');
-      setProducts(mockProducts);
+      console.warn('[Supabase] Client not initialized — check VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY.');
+      setProducts([]);
+      setIsLoadingProducts(false);
       return;
     }
     try {
       const { data, error } = await supabase
         .from('products')
-        .select(`
-          *,
-          categories (name)
-        `)
+        .select(`*, categories (name)`)
+        .eq('status', 'active')
         .order('created_at', { ascending: false });
 
       if (error) throw error;
 
-      if (data) {
-        const mappedProducts: Product[] = data.map(p => ({
-          id: p.id,
-          name: p.name,
-          description: p.description,
-          price: Number(p.price),
-          category: p.categories?.name || 'Uncategorized',
-          images: p.images,
-          vendorId: p.seller_id,
-          rating: 5, // Default
-          reviewsCount: 0,
-          specifications: p.specifications,
-          stock: p.stock
-        }));
+      const mappedProducts: Product[] = (data || []).map(p => ({
+        id: p.id,
+        name: p.name,
+        description: p.description,
+        price: Number(p.price),
+        category: p.categories?.name || 'Uncategorized',
+        images: Array.isArray(p.images) ? p.images : [],
+        vendorId: p.seller_id,
+        rating: 5,
+        reviewsCount: 0,
+        specifications: p.specifications,
+        stock: p.stock
+      }));
 
-        // Merge with mock products if none in DB, or just use DB
-        if (mappedProducts.length === 0) {
-          // No products in DB - set empty so UI can render empty state
-          setProducts([]);
-        } else {
-          setProducts(mappedProducts);
-        }
-
-        // Diagnostic: log how many products belong to current user (helps debug missing seller inventory)
-        try {
-          const currentUid = currentUser?.id || auth.currentUser?.uid;
-          if (currentUid) {
-            const myCount = mappedProducts.filter(mp => mp.vendorId === currentUid).length;
-            console.info('[refreshProducts] total=', mappedProducts.length, 'myProducts=', myCount, 'user=', currentUid);
-          } else {
-            console.info('[refreshProducts] total=', mappedProducts.length);
-          }
-        } catch (diagErr) {
-          console.warn('[refreshProducts] diagnostics failed', diagErr);
-        }
-      }
+      setProducts(mappedProducts);
     } catch (err) {
-      console.error('Error fetching products:', err);
-      // If Supabase is present but fetch failed, set empty products to avoid UI hang
-      if (supabase) {
-        setProducts([]);
-      } else {
-        // If Supabase not configured, fallback to bundled mock data
-        setProducts(mockProducts);
-      }
+      console.error('[refreshProducts] Error fetching products:', err);
+      setProducts([]);
+    } finally {
+      setIsLoadingProducts(false);
     }
   };
 
@@ -923,6 +899,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
       loginError,
       setLoginError,
       products,
+      isLoadingProducts,
       profiles,
       refreshProducts,
       refreshProfiles,

@@ -30,11 +30,12 @@ import ChatPopup from './components/ChatPopup';
 export default function App() {
   const [visibleCount, setVisibleCount] = useState(10);
   const [dashboardTab, setDashboardTab] = useState<'overview' | 'orders' | 'inventory' | 'earnings' | 'settings'>('overview');
-  const { 
+  const {
     products: allProducts,
-    selectedCategory, 
-    searchQuery, 
-    setSelectedCategory, 
+    isLoadingProducts,
+    selectedCategory,
+    searchQuery,
+    setSelectedCategory,
     setSearchQuery,
     selectedProductId,
     setSelectedProductId,
@@ -182,7 +183,20 @@ export default function App() {
                     )}
                   </div>
 
-                  {filteredProducts.length > 0 ? (
+                  {isLoadingProducts ? (
+                    <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 lg:gap-8">
+                      {Array.from({ length: 8 }).map((_, i) => (
+                        <div key={i} className="glass-card rounded-[1.5rem] sm:rounded-[2.5rem] overflow-hidden p-2 sm:p-4 animate-pulse">
+                          <div className="aspect-square rounded-[1.2rem] sm:rounded-[2rem] bg-emerald-100/60" />
+                          <div className="pt-3 px-1 space-y-2">
+                            <div className="h-2.5 bg-emerald-100/60 rounded-full w-1/3" />
+                            <div className="h-4 bg-emerald-100/60 rounded-full w-4/5" />
+                            <div className="h-5 bg-emerald-100/60 rounded-full w-1/2 mt-1" />
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : filteredProducts.length > 0 ? (
                     <>
                       <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-6 lg:gap-8">
                         {displayedProducts.map(product => <ProductCard key={product.id} product={product} />)}
@@ -190,7 +204,7 @@ export default function App() {
 
                       {hasMore && (
                         <div className="flex justify-center pt-12">
-                          <button 
+                          <button
                             onClick={() => setVisibleCount(prev => prev + 10)}
                             className="group flex items-center gap-3 bg-white border-2 border-emerald-100 hover:border-primary px-10 py-4 rounded-2xl font-black text-emerald-900 shadow-xl shadow-emerald-900/5 transition-all hover:-translate-y-1 active:scale-95"
                           >
@@ -204,14 +218,23 @@ export default function App() {
                     </>
                   ) : (
                     <div className="py-20 text-center glass rounded-[3rem]">
+                      <div className="w-16 h-16 bg-emerald-50 rounded-full flex items-center justify-center mx-auto mb-4 text-emerald-200">
+                        <ShoppingBag size={32} />
+                      </div>
                       <h3 className="text-2xl font-black text-emerald-900 mb-2">No items found</h3>
-                      <p className="text-emerald-600/60">Try searching for something else or clearing your filters.</p>
-                      <button 
-                        onClick={() => { setSelectedCategory(null); setSearchQuery(''); }}
-                        className="mt-6 bg-primary text-white px-8 py-3 rounded-2xl font-black shadow-lg shadow-primary/20"
-                      >
-                        Reset All Filters
-                      </button>
+                      <p className="text-emerald-600/60">
+                        {selectedCategory || searchQuery
+                          ? 'Try searching for something else or clearing your filters.'
+                          : 'No products have been listed yet. Be the first to sell!'}
+                      </p>
+                      {(selectedCategory || searchQuery) && (
+                        <button
+                          onClick={() => { setSelectedCategory(null); setSearchQuery(''); }}
+                          className="mt-6 bg-primary text-white px-8 py-3 rounded-2xl font-black shadow-lg shadow-primary/20"
+                        >
+                          Reset All Filters
+                        </button>
+                      )}
                     </div>
                   )}
                 </section>

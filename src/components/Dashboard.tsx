@@ -35,6 +35,7 @@ import { useApp } from '../context/AppContext';
 import { Order, OrderStatus } from '../types';
 import SellerEditor from './SellerEditor';
 import { supabase } from '../lib/supabase';
+import { uploadImageToSupabase } from '../lib/uploadImage';
 
 interface DashboardProps {
   role: 'vendor' | 'admin' | 'rider' | 'customer';
@@ -1350,33 +1351,17 @@ const OrderTableRow = ({ order, role, products, profiles, updateOrderStatus, cur
     const file = e.target.files?.[0];
     if (!file) return;
 
+    setIsUpdating(true);
     try {
-      setIsUpdating(true);
-      
-      const reader = new FileReader();
-      reader.onloadend = async () => {
-        const base64String = reader.result as string;
-        try {
-          await updateOrderStatus(order.id, 'delivered', undefined, base64String);
-          alert('Proof of delivery photo saved! Order marked as delivered.');
-        } catch (error: any) {
-          console.error('Delivery update failed:', error);
-          alert(`Update failed: ${error.message || 'Unknown error'}`);
-        } finally {
-          setIsUpdating(false);
-        }
-      };
-      
-      reader.onerror = () => {
-        alert('Failed to read file');
-        setIsUpdating(false);
-      };
-      
-      reader.readAsDataURL(file);
+      const photoUrl = await uploadImageToSupabase(file, 'proof-payments');
+      await updateOrderStatus(order.id, 'delivered', undefined, photoUrl);
+      alert('Proof of delivery photo saved! Order marked as delivered.');
     } catch (error: any) {
-      console.error('Photo handling failed:', error);
-      alert(`Photo handling failed: ${error.message || 'Unknown error'}`);
+      console.error('Photo upload failed:', error);
+      alert(`Photo upload failed: ${error.message || 'Unknown error'}`);
+    } finally {
       setIsUpdating(false);
+      if (e.target) e.target.value = '';
     }
   };
 

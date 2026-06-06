@@ -149,6 +149,48 @@ ALTER PUBLICATION supabase_realtime ADD TABLE messages;
 ALTER PUBLICATION supabase_realtime ADD TABLE orders;
 ALTER PUBLICATION supabase_realtime ADD TABLE order_items;
 
+-- -------------------------------------------------------
+-- STORAGE POLICIES for palawanmart_images bucket
+-- This app uses Firebase Auth (not Supabase Auth), so all
+-- requests run as the anon/public role. These policies let
+-- the anon role upload and read files from the bucket.
+-- -------------------------------------------------------
+
+-- Ensure the bucket exists and is public
+INSERT INTO storage.buckets (id, name, public)
+VALUES ('palawanmart_images', 'palawanmart_images', true)
+ON CONFLICT (id) DO UPDATE SET public = true;
+
+-- Drop any stale storage policies first
+DROP POLICY IF EXISTS "Allow public storage inserts" ON storage.objects;
+DROP POLICY IF EXISTS "Allow public storage reads"   ON storage.objects;
+DROP POLICY IF EXISTS "Allow public storage updates" ON storage.objects;
+DROP POLICY IF EXISTS "Allow public storage deletes" ON storage.objects;
+
+-- Allow anyone to upload files into the bucket
+CREATE POLICY "Allow public storage inserts"
+  ON storage.objects FOR INSERT
+  TO public
+  WITH CHECK (bucket_id = 'palawanmart_images');
+
+-- Allow anyone to read (view) files from the bucket
+CREATE POLICY "Allow public storage reads"
+  ON storage.objects FOR SELECT
+  TO public
+  USING (bucket_id = 'palawanmart_images');
+
+-- Allow anyone to update files (needed for upsert)
+CREATE POLICY "Allow public storage updates"
+  ON storage.objects FOR UPDATE
+  TO public
+  USING (bucket_id = 'palawanmart_images');
+
+-- Allow anyone to delete files
+CREATE POLICY "Allow public storage deletes"
+  ON storage.objects FOR DELETE
+  TO public
+  USING (bucket_id = 'palawanmart_images');
+
 -- To make a user an admin, run this SQL after they first log in:
 -- UPDATE profiles SET role = 'admin' WHERE email = 'your-email@example.com';
 

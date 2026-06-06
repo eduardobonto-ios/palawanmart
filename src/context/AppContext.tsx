@@ -753,6 +753,10 @@ export function AppProvider({ children }: { children: ReactNode }) {
     setIsLoggingIn(true);
     setLoginError(null);
     try {
+      // Sign out first so Firebase cannot silently reuse the previous session,
+      // combined with prompt:'select_account' on the provider this guarantees
+      // the Google account picker always appears.
+      await signOut(auth);
       await signInWithPopup(auth, googleProvider);
       setIsLoginModalOpen(false);
       setCurrentPage('home');
